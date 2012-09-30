@@ -23,3 +23,26 @@ node(Id, Predecessor, Successor) ->
 	    io:format('Strange message received'),
 	    node(Id, Predecessor, Successor)
     end.
+
+stabilize(Pred, Id, Successor) ->
+    {Skey, Spid} = Successor,
+    case Pred of
+	nil -> 
+	    Spid ! {notify, {Id, self()}},
+	    Successor;
+	{Id, _} -> 
+	    Successor;
+	{Skey, _} -> 
+	    Spid ! {notify, {Id, self()}},
+	    Successor;
+	{Xkey, Xpid} ->
+	    case key:between(Xkey, Id, Skey) of
+		true ->
+		    Xpid ! {request, self()},
+		    Pred;
+		false ->
+		    Spid ! {notify, {Id, self()}},
+		    Successor
+	    end
+    end.
+	    
