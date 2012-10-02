@@ -15,7 +15,7 @@ init(Id, Peer) ->
     Predecessor = nil,
     {ok, Successor} = connect(Id, Peer),
     schedule_stabilize(),
-    node(Id, Predecessor, Successor).
+    node(Id, Predecessor, Successor, []).
 
 connect(Id, nil) ->
     {ok, {Id, self()}};
@@ -33,36 +33,43 @@ connect(_, Peer) ->
 
 
 
-node(Id, Predecessor, Successor) ->
+node(Id, Predecessor, Successor, Store) ->
     receive
 	% A peer needs to know our key Id
 	{key, Qref, Peer} ->
 	    Peer ! {Qref, Id},
-	    node(Id, Predecessor, Successor);
+	    node(Id, Predecessor, Successor, Store);
 	% New node
 	{notify, New} ->
 	    Pred = notify(New, Id, Predecessor),
-	    node(Id, Pred, Successor);
+	    node(Id, Pred, Successor, Store);
 	% Message coming from the predecessor who wants to know our predecessor
 	{request, Peer} ->
 	    request(Peer, Predecessor),
-	    node(Id, Predecessor, Successor);
+	    node(Id, Predecessor, Successor, Store);
 	% What is the predecessor of the next node (successor)
 	{status, Pred} ->
 	    Succ = stabilize(Pred, Id, Successor),
-	    node(Id, Predecessor, Succ);
+	    node(Id, Predecessor, Succ, Store);
 	stabilize ->
 	    stabilize(Successor),
-	    node(Id, Predecessor, Successor);
+	    node(Id, Predecessor, Successor, Store);
 	probe ->
 	    create_probe(Id, Successor),
-	    node(Id, Predecessor, Successor);
+	    node(Id, Predecessor, Successor, Store);
 	{probe, Id, Nodes, T} ->
 	    remove_probe(T, Nodes),
-	    node(Id, Predecessor, Successor);
+	    node(Id, Predecessor, Successor, Store);
 	{probe, Ref, Nodes, T} ->
 	    forward_probe(Ref, T, Nodes, Id, Successor),
-	    node(Id, Predecessor, Successor);
+	    node(Id, Predecessor, Successor, Store);
+	{add, Key, Value, Qref, Client} ->
+	    Added = add(Key, Value, Qref, Client,
+			Id, Predecessor, Successor, Store),
+	    node(Id, Predecessor, Successor, Added);
+	{lookup, Key, Qref, Client} ->
+	    lookup(Key, Qref, Client, Id, Predecessor, Successor, Store),
+	    node(Id, Predecessor, Successor, Store);
 	state ->
 	    io:format(' Id : ~w~n Predecessor : ~w~n Successor : ~w~n', [Id, Predecessor, Successor]),
 	    node(Id, Predecessor, Successor);
@@ -135,3 +142,16 @@ remove_probe(T, Nodes) ->
 
 forward_probe(Ref, T, Nodes, Id, {_,Spid}) ->
     Spid ! {probe,Ref,Nodes ++ [Id],T}.
+
+
+add(Key, Value, Qref, Client, Id, {Pkey, _}, {_, Spid}, Store) ->
+    case Id == Client of
+	true ->
+	    Client ! {Qref, ok},
+	    {Key, Value} | Store;
+	false ->
+	    Spid ! {add, Key, Value, Qref, Client},
+	    Store
+    end.
+
+
