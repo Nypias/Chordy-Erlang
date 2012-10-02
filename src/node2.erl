@@ -154,4 +154,12 @@ add(Key, Value, Qref, Client, Id, {Pkey, _}, {_, Spid}, Store) ->
 	    Store
     end.
 
-
+lookup(Key, Qref, Client, Id, {Pkey, _}, Successor, Store) ->
+    case Id == Client of
+	true ->
+	    Result = storage:lookup(Key, Store),
+	    Client ! {Qref, Result};
+	false ->
+	    {_, Spid} = Successor,
+	    Spid ! {lookup, Key, Qref, Client}
+    end.
